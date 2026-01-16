@@ -1,99 +1,177 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var sessionManager: SessionManager
     @EnvironmentObject var serverManager: ServerManager
     @State private var showingAddSession = false
+    @State private var showingProxySettings = false
+    @State private var editingSession: Session?
 
     var body: some View {
-        HSplitView {
-            // Left: Session list
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("Sessions")
-                        .font(.headline)
-                    Spacer()
-                    Button(action: { showingAddSession = true }) {
-                        Image(systemName: "plus")
+        ZStack {
+            HSplitView {
+                // Left: Session list
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Sessions")
+                            .font(.headline)
+                        Spacer()
+                        Button(action: { showingAddSession = true }) {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.borderless)
                     }
-                    .buttonStyle(.borderless)
-                }
-                .padding()
+                    .padding()
 
-                Divider()
+                    Divider()
 
-                List(selection: $sessionManager.activeSessionId) {
-                    ForEach(sessionManager.sessions) { session in
-                        SessionRowView(session: session)
-                            .tag(session.id)
-                    }
-                    .onDelete { indexSet in
-                        for index in indexSet {
-                            sessionManager.removeSession(id: sessionManager.sessions[index].id)
+                    List(selection: $sessionManager.activeSessionId) {
+                        ForEach(sessionManager.sessions) { session in
+                            SessionRowView(session: session)
+                                .tag(session.id)
+                                .contextMenu {
+                                    Button("Edit") {
+                                        editingSession = session
+                                    }
+                                    Divider()
+                                    Button("Delete", role: .destructive) {
+                                        sessionManager.removeSession(id: session.id)
+                                    }
+                                }
                         }
                     }
+                    .listStyle(.sidebar)
                 }
-                .listStyle(.sidebar)
-            }
-            .frame(minWidth: 200, maxWidth: 300)
+                .frame(minWidth: 200, maxWidth: 300)
 
-            // Right: Main content
-            VStack(spacing: 0) {
-                // Server status bar
-                HStack {
-                    Circle()
-                        .fill(serverManager.isRunning ? Color.green : Color.red)
-                        .frame(width: 8, height: 8)
+                // Right: Main content
+                VStack(spacing: 0) {
+                    // Server status bar
+                    HStack {
+                        Circle()
+                            .fill(serverManager.isRunning ? Color.green : Color.red)
+                            .frame(width: 8, height: 8)
 
-                    if serverManager.isRunning {
-                        Text(serverManager.serverURL)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
-
-                        Text("PIN: \(serverManager.pin)")
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundColor(.secondary)
-
-                        Text("\(serverManager.connectedClients) connected")
-                            .foregroundColor(.secondary)
-                    } else {
-                        Text("Server stopped")
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
-
-                    Button(serverManager.isRunning ? "Stop" : "Start") {
                         if serverManager.isRunning {
-                            serverManager.stop()
+                            Text(serverManager.serverURL)
+                                .font(.system(.body, design: .monospaced))
+
+                            Button(action: {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(serverManager.serverURL, forType: .string)
+                            }) {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Copy URL")
+
+                            if !serverManager.proxyPorts.isEmpty {
+                                Text("Proxy: \(serverManager.proxyPorts.count) ports")
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundColor(.orange)
+                            }
+
+                            if serverManager.pinEnabled {
+                                Text("PIN: \(serverManager.pin)")
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("PIN: OFF")
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Text("\(serverManager.connectedClients) connected")
+                                .foregroundColor(.secondary)
                         } else {
-                            serverManager.start(sessionManager: sessionManager)
+                            Text("Server stopped")
+                                .foregroundColor(.secondary)
+
+                            Toggle("PIN", isOn: $serverManager.pinEnabled)
+                                .toggleStyle(.switch)
+
+                            Button("Proxy Settings") {
+                                showingProxySettings = true
+                            }
+
+                            Text("\(serverManager.proxyPorts.count) ports")
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button(serverManager.isRunning ? "Stop" : "Start") {
+                            if serverManager.isRunning {
+                                serverManager.stop()
+                            } else {
+                                serverManager.start(sessionManager: sessionManager)
+                            }
+                        }
+
+                        Button("Quit") {
+                            NSApplication.shared.terminate(nil)
+                        }
+                    }
+                    .padding()
+                    .background(Color(NSColor.controlBackgroundColor))
+
+                    Divider()
+
+                    // Session detail
+                    if let activeId = sessionManager.activeSessionId,
+                       let session = sessionManager.sessions.first(where: { $0.id == activeId })
+                    {
+                        SessionDetailView(session: session)
+                    } else {
+                        VStack {
+                            Spacer()
+                            Text("Select a session")
+                                .foregroundColor(.secondary)
+                            Spacer()
                         }
                     }
                 }
-                .padding()
-                .background(Color(NSColor.controlBackgroundColor))
+            }
+            .disabled(showingAddSession)
 
-                Divider()
-
-                // Session detail
-                if let activeId = sessionManager.activeSessionId,
-                   let session = sessionManager.sessions.first(where: { $0.id == activeId }) {
-                    SessionDetailView(session: session)
-                } else {
-                    VStack {
-                        Spacer()
-                        Text("Select a session")
-                            .foregroundColor(.secondary)
-                        Spacer()
+            if showingAddSession {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        showingAddSession = false
                     }
-                }
+
+                AddSessionView(isPresented: $showingAddSession)
+                    .environmentObject(sessionManager)
+            }
+
+            if showingProxySettings {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        showingProxySettings = false
+                    }
+
+                ProxySettingsView(isPresented: $showingProxySettings)
+                    .environmentObject(serverManager)
+            }
+
+            if let session = editingSession {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        editingSession = nil
+                    }
+
+                EditSessionView(session: session, isPresented: Binding(
+                    get: { editingSession != nil },
+                    set: { if !$0 { editingSession = nil } }
+                ))
+                .environmentObject(sessionManager)
             }
         }
         .frame(minWidth: 800, minHeight: 500)
-        .sheet(isPresented: $showingAddSession) {
-            AddSessionView()
-        }
     }
 }
 
@@ -131,81 +209,143 @@ struct SessionRowView: View {
 struct SessionDetailView: View {
     let session: Session
     @EnvironmentObject var sessionManager: SessionManager
-    @State private var input = ""
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Terminal output
-            ScrollView {
-                Text(sessionManager.getOutput(for: session.id))
-                    .font(.system(.body, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
+        ScrollView {
+            Text(sessionManager.getOutput(for: session.id))
+                .font(.system(.body, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        }
+        .background(Color(NSColor.textBackgroundColor))
+    }
+}
+
+class FocusableNSTextField: NSTextField {
+    var onFocusChange: ((Bool) -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        onFocusChange?(true)
+        return super.becomeFirstResponder()
+    }
+
+    override func resignFirstResponder() -> Bool {
+        onFocusChange?(false)
+        return super.resignFirstResponder()
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+}
+
+struct FocusableTextField: NSViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    var autoFocus: Bool = true
+
+    func makeNSView(context: Context) -> FocusableNSTextField {
+        let textField = FocusableNSTextField()
+        textField.placeholderString = placeholder
+        textField.delegate = context.coordinator
+        textField.bezelStyle = .roundedBezel
+        textField.isBordered = true
+        textField.isBezeled = true
+        textField.isEditable = true
+        textField.isSelectable = true
+        textField.focusRingType = .exterior
+
+        if autoFocus {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                textField.window?.makeFirstResponder(textField)
             }
-            .background(Color(NSColor.textBackgroundColor))
+        }
 
-            Divider()
+        return textField
+    }
 
-            // Input
-            HStack {
-                TextField("Input...", text: $input)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit {
-                        sessionManager.sendInput(input, to: session.id)
-                        input = ""
-                    }
+    func updateNSView(_ nsView: FocusableNSTextField, context _: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+    }
 
-                Button("Send") {
-                    sessionManager.sendInput(input, to: session.id)
-                    input = ""
-                }
-                .keyboardShortcut(.return, modifiers: [])
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: FocusableTextField
+
+        init(_ parent: FocusableTextField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            if let textField = obj.object as? NSTextField {
+                parent.text = textField.stringValue
             }
-            .padding()
         }
     }
 }
 
 struct AddSessionView: View {
     @EnvironmentObject var sessionManager: SessionManager
-    @Environment(\.dismiss) var dismiss
+    @Binding var isPresented: Bool
 
-    @State private var name = ""
+    @State private var name = "default"
     @State private var type: SessionType = .claudeCode
     @State private var tmuxSession = ""
     @State private var discoveredSessions: [String] = []
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 16) {
             Text("Add Session")
                 .font(.headline)
 
-            Form {
-                TextField("Name", text: $name)
-
-                Picker("Type", selection: $type) {
-                    ForEach(SessionType.allCases, id: \.self) { type in
-                        Text(type.rawValue).tag(type)
-                    }
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 12) {
+                GridRow {
+                    Text("Name:")
+                        .frame(width: 100, alignment: .trailing)
+                    FocusableTextField(text: $name, placeholder: "Session name")
+                        .frame(height: 22)
                 }
 
-                Picker("tmux Session", selection: $tmuxSession) {
-                    Text("Select...").tag("")
-                    ForEach(discoveredSessions, id: \.self) { session in
-                        Text(session).tag(session)
+                GridRow {
+                    Text("Type:")
+                        .frame(width: 100, alignment: .trailing)
+                    Picker("", selection: $type) {
+                        ForEach(SessionType.allCases, id: \.self) { t in
+                            Text(t.rawValue).tag(t)
+                        }
                     }
+                    .labelsHidden()
                 }
 
-                Button("Refresh Sessions") {
-                    Task {
-                        discoveredSessions = await sessionManager.discoverSessions().compactMap { $0.tmuxSession }
+                GridRow {
+                    Text("tmux Session:")
+                        .frame(width: 100, alignment: .trailing)
+                    HStack {
+                        Picker("", selection: $tmuxSession) {
+                            Text("Select...").tag("")
+                            ForEach(discoveredSessions, id: \.self) { session in
+                                Text(session).tag(session)
+                            }
+                        }
+                        .labelsHidden()
+
+                        Button("Refresh") {
+                            Task {
+                                discoveredSessions = await sessionManager.discoverSessions().compactMap(\.tmuxSession)
+                            }
+                        }
                     }
                 }
             }
 
+            Spacer().frame(height: 8)
+
             HStack {
                 Button("Cancel") {
-                    dismiss()
+                    isPresented = false
                 }
                 .keyboardShortcut(.cancelAction)
 
@@ -217,16 +357,216 @@ struct AddSessionView: View {
                         isActive: true
                     )
                     sessionManager.addSession(session)
-                    dismiss()
+                    isPresented = false
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(tmuxSession.isEmpty)
             }
         }
-        .padding()
-        .frame(width: 400)
+        .padding(20)
+        .frame(width: 420)
+        .background(Color(NSColor.windowBackgroundColor))
+        .cornerRadius(12)
+        .shadow(radius: 20)
         .task {
-            discoveredSessions = await sessionManager.discoverSessions().compactMap { $0.tmuxSession }
+            discoveredSessions = await sessionManager.discoverSessions().compactMap(\.tmuxSession)
+        }
+    }
+}
+
+struct ProxySettingsView: View {
+    @EnvironmentObject var serverManager: ServerManager
+    @Binding var isPresented: Bool
+
+    @State private var newTargetPort = ""
+    @State private var newExternalPort = ""
+
+    var sortedPorts: [(targetPort: Int, externalPort: Int)] {
+        serverManager.proxyPorts.map { ($0.key, $0.value) }.sorted { $0.0 < $1.0 }
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Proxy Port Settings")
+                .font(.headline)
+
+            Text("localhost → external")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 8) {
+                ForEach(sortedPorts, id: \.targetPort) { item in
+                    HStack {
+                        Text("localhost:\(item.targetPort)")
+                            .font(.system(.body, design: .monospaced))
+                        Text("→")
+                            .foregroundColor(.secondary)
+                        Text(":\(item.externalPort)")
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.orange)
+
+                        Spacer()
+
+                        Button(action: {
+                            serverManager.proxyPorts.removeValue(forKey: item.targetPort)
+                        }) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(6)
+                }
+
+                if sortedPorts.isEmpty {
+                    Text("No proxy ports configured")
+                        .foregroundColor(.secondary)
+                        .padding()
+                }
+            }
+
+            Divider()
+
+            HStack {
+                TextField("Target", text: $newTargetPort)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 80)
+                Text("→")
+                    .foregroundColor(.secondary)
+                TextField("External", text: $newExternalPort)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 80)
+
+                Button("Add") {
+                    if let target = Int(newTargetPort), let external = Int(newExternalPort) {
+                        serverManager.proxyPorts[target] = external
+                        newTargetPort = ""
+                        newExternalPort = ""
+                    }
+                }
+                .disabled(Int(newTargetPort) == nil || Int(newExternalPort) == nil)
+            }
+
+            Spacer().frame(height: 8)
+
+            Button("Close") {
+                isPresented = false
+            }
+            .keyboardShortcut(.cancelAction)
+        }
+        .padding(20)
+        .frame(width: 380)
+        .background(Color(NSColor.windowBackgroundColor))
+        .cornerRadius(12)
+        .shadow(radius: 20)
+    }
+}
+
+struct EditSessionView: View {
+    @EnvironmentObject var sessionManager: SessionManager
+    let session: Session
+    @Binding var isPresented: Bool
+
+    @State private var name: String
+    @State private var type: SessionType
+    @State private var tmuxSession: String
+    @State private var discoveredSessions: [String] = []
+
+    init(session: Session, isPresented: Binding<Bool>) {
+        self.session = session
+        _isPresented = isPresented
+        _name = State(initialValue: session.name)
+        _type = State(initialValue: session.type)
+        _tmuxSession = State(initialValue: session.tmuxSession ?? "")
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Edit Session")
+                .font(.headline)
+
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 12) {
+                GridRow {
+                    Text("Name:")
+                        .frame(width: 100, alignment: .trailing)
+                    TextField("Session name", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                GridRow {
+                    Text("Type:")
+                        .frame(width: 100, alignment: .trailing)
+                    Picker("", selection: $type) {
+                        ForEach(SessionType.allCases, id: \.self) { t in
+                            Text(t.rawValue).tag(t)
+                        }
+                    }
+                    .labelsHidden()
+                }
+
+                GridRow {
+                    Text("tmux Session:")
+                        .frame(width: 100, alignment: .trailing)
+                    HStack {
+                        Picker("", selection: $tmuxSession) {
+                            Text("Select...").tag("")
+                            ForEach(discoveredSessions, id: \.self) { session in
+                                Text(session).tag(session)
+                            }
+                        }
+                        .labelsHidden()
+
+                        Button("Refresh") {
+                            Task {
+                                discoveredSessions = await sessionManager.discoverSessions().compactMap(\.tmuxSession)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer().frame(height: 8)
+
+            HStack {
+                Button("Delete", role: .destructive) {
+                    sessionManager.removeSession(id: session.id)
+                    isPresented = false
+                }
+                .foregroundColor(.red)
+
+                Spacer()
+
+                Button("Cancel") {
+                    isPresented = false
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Save") {
+                    sessionManager.updateSession(
+                        id: session.id,
+                        name: name.isEmpty ? tmuxSession : name,
+                        type: type,
+                        tmuxSession: tmuxSession.isEmpty ? nil : tmuxSession
+                    )
+                    isPresented = false
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(tmuxSession.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+        .background(Color(NSColor.windowBackgroundColor))
+        .cornerRadius(12)
+        .shadow(radius: 20)
+        .task {
+            discoveredSessions = await sessionManager.discoverSessions().compactMap(\.tmuxSession)
+            if !discoveredSessions.contains(tmuxSession), !tmuxSession.isEmpty {
+                discoveredSessions.insert(tmuxSession, at: 0)
+            }
         }
     }
 }

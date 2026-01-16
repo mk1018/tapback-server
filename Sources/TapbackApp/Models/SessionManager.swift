@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 @MainActor
 class SessionManager: ObservableObject {
@@ -28,6 +28,23 @@ class SessionManager: ObservableObject {
             startPolling(for: id)
         } else {
             stopPolling(for: id)
+        }
+    }
+
+    func updateSession(id: UUID, name: String, type: SessionType, tmuxSession: String?) {
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        let wasActive = sessions[index].isActive
+        let oldTmuxSession = sessions[index].tmuxSession
+
+        sessions[index].name = name
+        sessions[index].type = type
+        sessions[index].tmuxSession = tmuxSession
+
+        if wasActive, oldTmuxSession != tmuxSession {
+            stopPolling(for: id)
+            if tmuxSession != nil {
+                startPolling(for: id)
+            }
         }
     }
 

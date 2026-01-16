@@ -1,44 +1,147 @@
-# Tapback macOS App
+# Tapback
 
-Native macOS app to sync terminal with mobile devices. Monitor multiple Claude Code/Codex instances from your phone.
+モバイル端末からClaude Code/Codexのターミナルを監視・操作するmacOSアプリ。
 
-## Features
+## 概要
 
-- **Multiple session monitoring** - Add and monitor multiple tmux sessions
-- **Tab-based mobile UI** - Switch between sessions on mobile
-- **Built-in web server** - Embedded HTTP/WebSocket server
-- **PIN authentication** - Secure access
+Tapbackは、Mac上で動作するClaude CodeやCodexなどのAIコーディングアシスタントを、iPhoneやiPadからリアルタイムで監視・操作するためのアプリです。
 
-## Requirements
+### 仕組み
+
+1. **ターミナル監視**: tmuxセッションの出力をキャプチャし、WebSocket経由でモバイルに配信
+2. **リバースプロキシ**: localhostで動作するWebアプリへのリクエストを中継（ngrok風）
+3. **同一ネットワーク**: MacとモバイルがでアクセスWi-Fi経由可能
+
+## 機能
+
+- **複数セッション監視** - 複数のtmuxセッションを同時に監視
+- **リバースプロキシ** - localhostで動作するWebアプリをモバイルからアクセス可能に
+- **PIN認証** - 4桁PINによるセキュアアクセス（無効化可能）
+- **モバイル最適化UI** - タブ切り替えでセッション/Webアプリを操作
+- **クイック入力** - 0〜4のボタンでClaude Codeの選択肢に即座に応答
+
+## 必要環境
 
 - macOS 13+
 - tmux
+- 同一ネットワーク上のモバイル端末
 
-## Build
+## ビルド
 
 ```bash
 swift build
 ```
 
-## Run
+## 実行
 
 ```bash
 swift run TapbackApp
 ```
 
-Or open in Xcode:
-```bash
-open Package.swift
+## 使い方
+
+### 基本的な流れ
+
+1. **tmuxでClaude Codeを起動**
+
+   ```bash
+   tmux new -s claude
+   claude
+   ```
+
+2. **Tapbackを起動**
+
+   ```bash
+   swift run TapbackApp
+   ```
+
+3. **セッションを追加**
+   - 「+」ボタンをクリック
+   - tmuxセッション（例: claude）を選択
+   - 「Add」をクリック
+
+4. **サーバーを起動**
+   - 「Start」をクリック
+   - 表示されるURL（例: `http://192.168.1.10:9876/`）をメモ
+
+5. **モバイルでアクセス**
+   - SafariでURLを開く
+   - PINを入力（有効時）
+   - ターミナル出力がリアルタイムで表示される
+
+### Webアプリのプロキシ
+
+localhost:3000で動作するNext.jsアプリをモバイルで確認する場合:
+
+1. **Proxy Settingsを開く**（サーバー停止中）
+2. **ポートマッピングを追加**
+   - Target: `3000`（ローカルのポート）
+   - External: `9877`（外部公開ポート）
+3. **サーバーを起動**
+4. **モバイルでアクセス**
+   - Terminalタブ: ターミナル監視
+   - Appタブ: Webアプリを表示
+
+### 複数ポートの設定
+
+Supabaseなど複数のローカルサービスを使用する場合:
+
+| Target | External | 用途     |
+| ------ | -------- | -------- |
+| 3000   | 9877     | Next.js  |
+| 54321  | 9878     | Supabase |
+
+レスポンス内のlocalhost参照は自動的にMacのIPに書き換えられます。
+
+## アーキテクチャ
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│ Mac                                                     │
+│  ┌─────────────┐     ┌─────────────┐                   │
+│  │ tmux        │────▶│ Tapback    │                   │
+│  │ (claude)    │     │ App        │                   │
+│  └─────────────┘     └──────┬──────┘                   │
+│                             │                          │
+│  ┌─────────────┐     ┌──────┴──────┐                   │
+│  │ localhost   │◀───▶│ Proxy      │                   │
+│  │ :3000       │     │ Server     │                   │
+│  └─────────────┘     └──────┬──────┘                   │
+│                             │ :9876 (Terminal)         │
+│                             │ :9877 (Proxy)            │
+└─────────────────────────────┼───────────────────────────┘
+                              │ Wi-Fi
+┌─────────────────────────────┼───────────────────────────┐
+│ iPhone                      │                          │
+│  ┌─────────────────────────┴────────────────────────┐  │
+│  │ Safari                                           │  │
+│  │  ┌─────────┐ ┌─────────┐                        │  │
+│  │  │Terminal │ │  App    │                        │  │
+│  │  │  Tab    │ │  Tab    │                        │  │
+│  │  └─────────┘ └─────────┘                        │  │
+│  └──────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## Usage
+## 設定
 
-1. Launch the app
-2. Click "+" to add a tmux session
-3. Click "Start" to start the server
-4. Open the displayed URL on your phone
-5. Enter the PIN
+### PIN認証
 
-## License
+- サーバー停止中に「PIN」トグルで有効/無効を切り替え
+- 有効時: 4桁のPINが自動生成され、初回アクセス時に入力が必要
+- 無効時: 認証なしで直接アクセス可能
+
+### セッション管理
+
+- 右クリックで編集・削除
+- トグルスイッチで有効/無効を切り替え
+
+## フォーマット
+
+```bash
+swiftformat Sources
+```
+
+## ライセンス
 
 MIT
