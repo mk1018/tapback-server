@@ -26,15 +26,24 @@ Tapbackは、Mac上で動作するClaude CodeやCodexなどのAIコーディン�
 - tmux
 - 同一ネットワーク上のモバイル端末
 
-## ビルド
+## インストール
+
+### GitHub Releasesからダウンロード
+
+1. [Releases](https://github.com/mk1018/tapback-code/releases)から最新の`Tapback-vX.X.X-arm64.zip`をダウンロード
+2. ZIPを展開
+3. `Tapback.app`を`/Applications`に移動
+4. 初回起動時に以下を実行（署名されていないため）:
+
+   ```bash
+   xattr -cr /Applications/Tapback.app
+   open /Applications/Tapback.app
+   ```
+
+### ソースからビルド
 
 ```bash
 swift build
-```
-
-## 実行
-
-```bash
 swift run TapbackApp
 ```
 

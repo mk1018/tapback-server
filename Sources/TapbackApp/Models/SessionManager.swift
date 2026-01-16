@@ -3,11 +3,41 @@ import Foundation
 
 @MainActor
 class SessionManager: ObservableObject {
-    @Published var sessions: [Session] = []
+    @Published var sessions: [Session] = [] {
+        didSet {
+            if !isLoading { save() }
+        }
+    }
+
     @Published var activeSessionId: UUID?
 
     private var outputCache: [UUID: String] = [:]
     private var pollingTasks: [UUID: Task<Void, Never>] = [:]
+    private let storageKey = "tapback_sessions"
+    private var isLoading = false
+
+    init() {
+        load()
+    }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(sessions) {
+            UserDefaults.standard.set(data, forKey: storageKey)
+        }
+    }
+
+    private func load() {
+        isLoading = true
+        if let data = UserDefaults.standard.data(forKey: storageKey),
+           let saved = try? JSONDecoder().decode([Session].self, from: data)
+        {
+            sessions = saved
+            for session in sessions where session.isActive {
+                startPolling(for: session.id)
+            }
+        }
+        isLoading = false
+    }
 
     func addSession(_ session: Session) {
         sessions.append(session)

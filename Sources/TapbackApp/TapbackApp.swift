@@ -7,9 +7,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var sigtermSource: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-
         // Handle Ctrl+C using DispatchSource
         signal(SIGINT, SIG_IGN)
         sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
@@ -25,12 +22,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         sigtermSource?.resume()
     }
-
-    func applicationDidBecomeActive(_: Notification) {
-        if let window = NSApp.windows.first {
-            window.makeKeyAndOrderFront(nil)
-        }
-    }
 }
 
 @main
@@ -40,7 +31,16 @@ struct TapbackApp: App {
     @StateObject private var serverManager = ServerManager()
 
     var body: some Scene {
-        WindowGroup {
+        MenuBarExtra {
+            MenuBarView()
+                .environmentObject(sessionManager)
+                .environmentObject(serverManager)
+        } label: {
+            Image(systemName: serverManager.isRunning ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
+        }
+        .menuBarExtraStyle(.window)
+
+        Window("Tapback", id: "main") {
             ContentView()
                 .environmentObject(sessionManager)
                 .environmentObject(serverManager)
