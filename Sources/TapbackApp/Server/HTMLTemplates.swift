@@ -1,7 +1,7 @@
 import Foundation
 
 enum HTMLTemplates {
-    static func mainPage(sessions: [Session], appURL: String? = nil) -> String {
+    static func mainPage(sessions: [Session], appURL: String? = nil, quickButtons: [QuickButton] = []) -> String {
         let sessionTabButtons = sessions.enumerated().map { index, session in
             """
             <button class="stab\(index == 0 ? " active" : "")" data-id="\(session.id.uuidString)">\(session.name)</button>
@@ -13,6 +13,15 @@ enum HTMLTemplates {
             <div class="stab-content\(index == 0 ? " active" : "")" data-id="\(session.id.uuidString)">
                 <div class="term" id="term-\(session.id.uuidString)"></div>
             </div>
+            """
+        }.joined()
+
+        let customButtonsHtml = quickButtons.map { button in
+            let escapedCommand = button.command
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            return """
+            <button class="btn bq bc" data-v="\(escapedCommand)">\(button.label)</button>
             """
         }.joined()
 
@@ -51,6 +60,8 @@ enum HTMLTemplates {
         .btn{padding:12px 18px;font-size:15px;font-weight:600;border:none;border-radius:10px;cursor:pointer;-webkit-tap-highlight-color:transparent}
         .btn:active{opacity:0.7}
         .bq{flex:1;background:#21262d;color:#c9d1d9}
+        .cust{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+        .bc{flex:none;background:#1f3a5f;color:#58a6ff;font-size:13px;padding:10px 14px}
         #txt{flex:1;padding:12px 14px;font-size:16px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:10px;min-width:0}
         #txt:focus{outline:none;border-color:#8b5cf6}
         .bsend{background:#8b5cf6;color:#fff}
@@ -72,6 +83,7 @@ enum HTMLTemplates {
                     <button class="btn bq" data-v="3">3</button>
                     <button class="btn bq" data-v="4">4</button>
                 </div>
+                \(customButtonsHtml.isEmpty ? "" : "<div class=\"row quick cust\">\(customButtonsHtml)</div>")
                 <div class="row">
                     <input type="text" id="txt" placeholder="Input..." autocomplete="off" enterkeyhint="send">
                     <button class="btn bsend" id="send">Send</button>

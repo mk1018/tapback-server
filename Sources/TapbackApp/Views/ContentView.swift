@@ -7,6 +7,7 @@ struct ContentView: View {
     @EnvironmentObject var serverManager: ServerManager
     @State private var showingAddSession = false
     @State private var showingProxySettings = false
+    @State private var showingQuickButtonSettings = false
     @State private var editingSession: Session?
 
     var body: some View {
@@ -101,6 +102,13 @@ struct ContentView: View {
 
                             Text("\(serverManager.proxyPorts.count) ports")
                                 .foregroundColor(.secondary)
+
+                            Button("Quick Buttons") {
+                                showingQuickButtonSettings = true
+                            }
+
+                            Text("\(serverManager.quickButtons.count) buttons")
+                                .foregroundColor(.secondary)
                         }
 
                         Spacer()
@@ -158,6 +166,17 @@ struct ContentView: View {
                     }
 
                 ProxySettingsView(isPresented: $showingProxySettings)
+                    .environmentObject(serverManager)
+            }
+
+            if showingQuickButtonSettings {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        showingQuickButtonSettings = false
+                    }
+
+                QuickButtonSettingsView(isPresented: $showingQuickButtonSettings)
                     .environmentObject(serverManager)
             }
 
@@ -636,5 +655,91 @@ struct EditSessionView: View {
                 discoveredSessions.insert(tmuxSession, at: 0)
             }
         }
+    }
+}
+
+struct QuickButtonSettingsView: View {
+    @EnvironmentObject var serverManager: ServerManager
+    @Binding var isPresented: Bool
+
+    @State private var newLabel = ""
+    @State private var newCommand = ""
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Quick Button Settings")
+                .font(.headline)
+
+            Text("Custom commands for mobile")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 8) {
+                ForEach(serverManager.quickButtons) { button in
+                    HStack {
+                        Text(button.label)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(width: 100, alignment: .leading)
+                        Text(button.command)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        Button(action: {
+                            serverManager.quickButtons.removeAll { $0.id == button.id }
+                        }) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(6)
+                }
+
+                if serverManager.quickButtons.isEmpty {
+                    Text("No custom buttons configured")
+                        .foregroundColor(.secondary)
+                        .padding()
+                }
+            }
+
+            Divider()
+
+            HStack {
+                TextField("Label", text: $newLabel)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 80)
+                TextField("Command (e.g. /commit)", text: $newCommand)
+                    .textFieldStyle(.roundedBorder)
+
+                Button("Add") {
+                    if !newLabel.isEmpty, !newCommand.isEmpty {
+                        serverManager.quickButtons.append(
+                            QuickButton(label: newLabel, command: newCommand)
+                        )
+                        newLabel = ""
+                        newCommand = ""
+                    }
+                }
+                .disabled(newLabel.isEmpty || newCommand.isEmpty)
+            }
+
+            Spacer().frame(height: 8)
+
+            Button("Close") {
+                isPresented = false
+            }
+            .keyboardShortcut(.cancelAction)
+        }
+        .padding(20)
+        .frame(width: 450)
+        .background(Color(NSColor.windowBackgroundColor))
+        .cornerRadius(12)
+        .shadow(radius: 20)
     }
 }
