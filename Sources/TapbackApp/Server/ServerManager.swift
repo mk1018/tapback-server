@@ -1,6 +1,18 @@
 import Foundation
 import Vapor
 
+struct QuickButton: Identifiable, Codable, Equatable {
+    let id: UUID
+    var label: String
+    var command: String
+
+    init(id: UUID = UUID(), label: String, command: String) {
+        self.id = id
+        self.label = label
+        self.command = command
+    }
+}
+
 @MainActor
 class ServerManager: ObservableObject {
     @Published var isRunning = false
@@ -12,6 +24,12 @@ class ServerManager: ObservableObject {
     }
 
     @Published var pinEnabled: Bool = true {
+        didSet {
+            if !isLoading { saveSettings() }
+        }
+    }
+
+    @Published var quickButtons: [QuickButton] = [] {
         didSet {
             if !isLoading { saveSettings() }
         }
@@ -35,6 +53,9 @@ class ServerManager: ObservableObject {
         if let data = try? JSONEncoder().encode(proxyPorts) {
             UserDefaults.standard.set(data, forKey: "tapback_proxyPorts")
         }
+        if let data = try? JSONEncoder().encode(quickButtons) {
+            UserDefaults.standard.set(data, forKey: "tapback_quickButtons")
+        }
     }
 
     private func loadSettings() {
@@ -46,6 +67,11 @@ class ServerManager: ObservableObject {
            let saved = try? JSONDecoder().decode([Int: Int].self, from: data)
         {
             proxyPorts = saved
+        }
+        if let data = UserDefaults.standard.data(forKey: "tapback_quickButtons"),
+           let saved = try? JSONDecoder().decode([QuickButton].self, from: data)
+        {
+            quickButtons = saved
         }
         isLoading = false
     }
@@ -72,6 +98,7 @@ class ServerManager: ObservableObject {
         let currentPort = port
         let currentProxyPorts = proxyPorts
         let currentPinEnabled = pinEnabled
+        let currentQuickButtons = quickButtons
         let authToken = UUID().uuidString
         let macIP = getLocalIP()
 
@@ -93,7 +120,8 @@ class ServerManager: ObservableObject {
                     authToken: authToken,
                     macIP: macIP,
                     appPort: firstExternalPort,
-                    pinEnabled: currentPinEnabled
+                    pinEnabled: currentPinEnabled,
+                    quickButtons: currentQuickButtons
                 )
 
                 await MainActor.run {
@@ -182,7 +210,8 @@ class ServerManager: ObservableObject {
         authToken: String,
         macIP: String,
         appPort: Int?,
-        pinEnabled: Bool
+        pinEnabled: Bool,
+        quickButtons: [QuickButton]
     ) async {
         let pin = pin
         let appURL = appPort.map { "http://\(macIP):\($0)/" }
@@ -197,7 +226,7 @@ class ServerManager: ObservableObject {
                 }
             }
 
-            let html = await HTMLTemplates.mainPage(sessions: sessionManager.sessions, appURL: appURL)
+            let html = await HTMLTemplates.mainPage(sessions: sessionManager.sessions, appURL: appURL, quickButtons: quickButtons)
             return Response(
                 status: .ok,
                 headers: ["Content-Type": "text/html"],
