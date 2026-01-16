@@ -72,15 +72,11 @@ struct ContentView: View {
                                     .foregroundColor(.orange)
                             }
 
-                            if serverManager.pinEnabled {
-                                Text("PIN: \(serverManager.pin)")
-                                    .font(.system(.body, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                            } else {
-                                Text("PIN: OFF")
-                                    .font(.system(.body, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                            }
+                            Text(serverManager.pinEnabled ? "PIN: \(serverManager.pin)" : "PIN: OFF")
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .fixedSize()
 
                             Text("\(serverManager.connectedClients) connected")
                                 .foregroundColor(.secondary)
@@ -88,8 +84,15 @@ struct ContentView: View {
                             Text("Server stopped")
                                 .foregroundColor(.secondary)
 
-                            Toggle("PIN", isOn: $serverManager.pinEnabled)
-                                .toggleStyle(.switch)
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(serverManager.pinEnabled ? Color.green : Color.orange)
+                                    .frame(width: 8, height: 8)
+                                Text("PIN")
+                                Toggle("", isOn: $serverManager.pinEnabled)
+                                    .toggleStyle(.switch)
+                                    .labelsHidden()
+                            }
 
                             Button("Proxy Settings") {
                                 showingProxySettings = true

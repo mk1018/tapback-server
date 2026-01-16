@@ -5,8 +5,18 @@ import Vapor
 class ServerManager: ObservableObject {
     @Published var isRunning = false
     @Published var port: Int = 9876
-    @Published var proxyPorts: [Int: Int] = [3000: 9877] // [targetPort: externalPort]
-    @Published var pinEnabled: Bool = true
+    @Published var proxyPorts: [Int: Int] = [:] {
+        didSet {
+            if !isLoading { saveSettings() }
+        }
+    }
+
+    @Published var pinEnabled: Bool = true {
+        didSet {
+            if !isLoading { saveSettings() }
+        }
+    }
+
     @Published var pin: String = ""
     @Published var connectedClients = 0
 
@@ -14,6 +24,31 @@ class ServerManager: ObservableObject {
     private var proxyServers: [Int: Application] = [:]
     private var serverTask: Task<Void, Never>?
     private var proxyServerTasks: [Int: Task<Void, Never>] = [:]
+    private var isLoading = false
+
+    init() {
+        loadSettings()
+    }
+
+    private func saveSettings() {
+        UserDefaults.standard.set(pinEnabled, forKey: "tapback_pinEnabled")
+        if let data = try? JSONEncoder().encode(proxyPorts) {
+            UserDefaults.standard.set(data, forKey: "tapback_proxyPorts")
+        }
+    }
+
+    private func loadSettings() {
+        isLoading = true
+        if UserDefaults.standard.object(forKey: "tapback_pinEnabled") != nil {
+            pinEnabled = UserDefaults.standard.bool(forKey: "tapback_pinEnabled")
+        }
+        if let data = UserDefaults.standard.data(forKey: "tapback_proxyPorts"),
+           let saved = try? JSONDecoder().decode([Int: Int].self, from: data)
+        {
+            proxyPorts = saved
+        }
+        isLoading = false
+    }
 
     var serverURL: String {
         let ip = getLocalIP()

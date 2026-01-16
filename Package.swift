@@ -4,10 +4,10 @@ import PackageDescription
 let package = Package(
     name: "TapbackApp",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v13),
     ],
     products: [
-        .executable(name: "TapbackApp", targets: ["TapbackApp"])
+        .executable(name: "TapbackApp", targets: ["TapbackApp"]),
     ],
     dependencies: [
         .package(url: "https://github.com/vapor/vapor.git", from: "4.89.0"),
@@ -18,6 +18,6 @@ let package = Package(
             dependencies: [
                 .product(name: "Vapor", package: "vapor"),
             ]
-        )
+        ),
     ]
 )
