@@ -11,7 +11,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/vapor/vapor.git", from: "4.89.0"),
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", branch: "main"),
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", revision: "e81c583ba0d9e5aaa9081003bd8605e95d7fe2bc"),
     ],
     targets: [
         .executableTarget(
