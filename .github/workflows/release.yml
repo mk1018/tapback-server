@@ -28,6 +28,9 @@ jobs:
           cp Resources/Info.plist dist/Tapback.app/Contents/
           echo -n "APPL????" > dist/Tapback.app/Contents/PkgInfo
 
+      - name: Ad-hoc Sign
+        run: codesign --force --deep --sign - dist/Tapback.app
+
       - name: Create ZIP
         run: |
           cd dist
