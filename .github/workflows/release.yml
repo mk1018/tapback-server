@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Build Release
+        run: swift build -c release
+
+      - name: Create App Bundle
+        run: |
+          mkdir -p dist/Tapback.app/Contents/MacOS
+          mkdir -p dist/Tapback.app/Contents/Resources
+          cp .build/release/TapbackApp dist/Tapback.app/Contents/MacOS/
+          cp Resources/Info.plist dist/Tapback.app/Contents/
+          echo -n "APPL????" > dist/Tapback.app/Contents/PkgInfo
+
+      - name: Create ZIP
+        run: |
+          cd dist
+          zip -r Tapback-${{ github.ref_name }}-arm64.zip Tapback.app
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/Tapback-${{ github.ref_name }}-arm64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
