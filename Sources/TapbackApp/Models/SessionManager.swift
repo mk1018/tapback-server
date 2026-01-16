@@ -46,8 +46,34 @@ class SessionManager: ObservableObject {
         }
     }
 
+    func addManagedSession(name: String, type: SessionType) async {
+        let tmuxSessionName = "tapback-\(UUID().uuidString.prefix(8))"
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+
+        let success = await TmuxHelper.createSession(name: tmuxSessionName, directory: homeDir)
+        if success {
+            let session = Session(
+                name: name,
+                type: type,
+                tmuxSession: tmuxSessionName,
+                isActive: true,
+                isManaged: true
+            )
+            sessions.append(session)
+            startPolling(for: session.id)
+        }
+    }
+
     func removeSession(id: UUID) {
+        guard let session = sessions.first(where: { $0.id == id }) else { return }
         stopPolling(for: id)
+
+        if session.isManaged, let tmuxSession = session.tmuxSession {
+            Task {
+                await TmuxHelper.killSession(name: tmuxSession)
+            }
+        }
+
         sessions.removeAll { $0.id == id }
     }
 

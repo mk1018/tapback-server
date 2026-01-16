@@ -26,6 +26,44 @@ Tapbackは、Mac上で動作するClaude CodeやCodexなどのAIコーディン�
 - tmux
 - 同一ネットワーク上のモバイル端末
 
+## 環境セットアップ
+
+### tmuxのインストール
+
+Tapbackはtmuxを使用してターミナルセッションを管理します。
+
+```bash
+# Homebrewでインストール
+brew install tmux
+```
+
+インストール確認:
+
+```bash
+which tmux
+# 出力例: /opt/homebrew/bin/tmux (Apple Silicon)
+# 出力例: /usr/local/bin/tmux (Intel Mac)
+```
+
+### PATHについて
+
+アプリは以下のパスでtmuxを検索します:
+
+- `/opt/homebrew/bin` (Apple Silicon)
+- `/usr/local/bin` (Intel Mac)
+
+Homebrewでインストールした場合は自動的に認識されます。
+
+### ソースからビルドする場合
+
+```bash
+# Xcodeコマンドラインツール
+xcode-select --install
+
+# Swift 5.9以上が必要
+swift --version
+```
+
 ## インストール
 
 ### GitHub Releasesからダウンロード
@@ -51,7 +89,27 @@ swift run TapbackApp
 
 ### 基本的な流れ
 
-1. **tmuxでClaude Codeを起動**
+#### 方法1: アプリ内でセッションを新規作成
+
+1. **Tapbackを起動**
+
+   ```bash
+   swift run TapbackApp
+   ```
+
+2. **セッションを新規作成**
+   - 「+」ボタンをクリック
+   - 「新規作成」タブを選択
+   - 名前とタイプを入力
+   - 「Add」をクリック
+
+3. **アプリ内ターミナルで操作**
+   - 作成したセッションを選択
+   - アプリ内のターミナルで直接操作可能
+
+#### 方法2: 既存のtmuxセッションを監視
+
+1. **別のターミナルでtmuxセッションを起動**
 
    ```bash
    tmux new -s claude
@@ -66,6 +124,7 @@ swift run TapbackApp
 
 3. **セッションを追加**
    - 「+」ボタンをクリック
+   - 「既存を監視」タブを選択
    - tmuxセッション（例: claude）を選択
    - 「Add」をクリック
 

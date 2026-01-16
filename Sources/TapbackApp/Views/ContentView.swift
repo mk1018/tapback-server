@@ -1,4 +1,5 @@
 import AppKit
+import SwiftTerm
 import SwiftUI
 
 struct ContentView: View {
@@ -214,13 +215,51 @@ struct SessionDetailView: View {
     @EnvironmentObject var sessionManager: SessionManager
 
     var body: some View {
-        ScrollView {
-            Text(sessionManager.getOutput(for: session.id))
-                .font(.system(.body, design: .monospaced))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
+        if let tmuxSession = session.tmuxSession {
+            TerminalContainerView(tmuxSession: tmuxSession)
+                .id(session.id)
+        } else {
+            Text("No tmux session")
+                .foregroundColor(.secondary)
         }
-        .background(Color(NSColor.textBackgroundColor))
+    }
+}
+
+struct TerminalContainerView: NSViewRepresentable {
+    let tmuxSession: String
+
+    func makeNSView(context: Context) -> LocalProcessTerminalView {
+        let terminalView = LocalProcessTerminalView(frame: .zero)
+        terminalView.processDelegate = context.coordinator
+
+        terminalView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        terminalView.nativeForegroundColor = NSColor.white
+        terminalView.nativeBackgroundColor = NSColor.black
+        terminalView.getTerminal().setCursorStyle(.blinkBlock)
+
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        var envDict = ProcessInfo.processInfo.environment
+        envDict["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (envDict["PATH"] ?? "")
+        envDict["LANG"] = "en_US.UTF-8"
+        envDict["LC_ALL"] = "en_US.UTF-8"
+        envDict["TERM"] = "xterm-256color"
+        let env = envDict.map { "\($0.key)=\($0.value)" }
+        terminalView.startProcess(executable: shell, args: ["-l", "-c", "tmux set-option -g default-terminal 'xterm-256color' \\; attach -t \(tmuxSession)"], environment: env)
+
+        return terminalView
+    }
+
+    func updateNSView(_: LocalProcessTerminalView, context _: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
+        func processTerminated(source _: TerminalView, exitCode _: Int32?) {}
+        func sizeChanged(source _: LocalProcessTerminalView, newCols _: Int, newRows _: Int) {}
+        func setTerminalTitle(source _: LocalProcessTerminalView, title _: String) {}
+        func hostCurrentDirectoryUpdate(source _: TerminalView, directory _: String?) {}
     }
 }
 
@@ -290,11 +329,17 @@ struct FocusableTextField: NSViewRepresentable {
     }
 }
 
+enum SessionMode: String, CaseIterable {
+    case create = "新規作成"
+    case watch = "既存を監視"
+}
+
 struct AddSessionView: View {
     @EnvironmentObject var sessionManager: SessionManager
     @Binding var isPresented: Bool
 
-    @State private var name = "default"
+    @State private var mode: SessionMode = .create
+    @State private var name = ""
     @State private var type: SessionType = .claudeCode
     @State private var tmuxSession = ""
     @State private var discoveredSessions: [String] = []
@@ -303,6 +348,13 @@ struct AddSessionView: View {
         VStack(spacing: 16) {
             Text("Add Session")
                 .font(.headline)
+
+            Picker("", selection: $mode) {
+                ForEach(SessionMode.allCases, id: \.self) { m in
+                    Text(m.rawValue).tag(m)
+                }
+            }
+            .pickerStyle(.segmented)
 
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 12) {
                 GridRow {
@@ -323,21 +375,23 @@ struct AddSessionView: View {
                     .labelsHidden()
                 }
 
-                GridRow {
-                    Text("tmux Session:")
-                        .frame(width: 100, alignment: .trailing)
-                    HStack {
-                        Picker("", selection: $tmuxSession) {
-                            Text("Select...").tag("")
-                            ForEach(discoveredSessions, id: \.self) { session in
-                                Text(session).tag(session)
+                if mode == .watch {
+                    GridRow {
+                        Text("tmux Session:")
+                            .frame(width: 100, alignment: .trailing)
+                        HStack {
+                            Picker("", selection: $tmuxSession) {
+                                Text("Select...").tag("")
+                                ForEach(discoveredSessions, id: \.self) { session in
+                                    Text(session).tag(session)
+                                }
                             }
-                        }
-                        .labelsHidden()
+                            .labelsHidden()
 
-                        Button("Refresh") {
-                            Task {
-                                discoveredSessions = await sessionManager.discoverSessions().compactMap(\.tmuxSession)
+                            Button("Refresh") {
+                                Task {
+                                    discoveredSessions = await sessionManager.discoverSessions().compactMap(\.tmuxSession)
+                                }
                             }
                         }
                     }
@@ -353,17 +407,28 @@ struct AddSessionView: View {
                 .keyboardShortcut(.cancelAction)
 
                 Button("Add") {
-                    let session = Session(
-                        name: name.isEmpty ? tmuxSession : name,
-                        type: type,
-                        tmuxSession: tmuxSession.isEmpty ? nil : tmuxSession,
-                        isActive: true
-                    )
-                    sessionManager.addSession(session)
-                    isPresented = false
+                    if mode == .create {
+                        Task {
+                            await sessionManager.addManagedSession(
+                                name: name.isEmpty ? type.rawValue : name,
+                                type: type
+                            )
+                            isPresented = false
+                        }
+                    } else {
+                        let session = Session(
+                            name: name.isEmpty ? tmuxSession : name,
+                            type: type,
+                            tmuxSession: tmuxSession.isEmpty ? nil : tmuxSession,
+                            isActive: true,
+                            isManaged: false
+                        )
+                        sessionManager.addSession(session)
+                        isPresented = false
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(tmuxSession.isEmpty)
+                .disabled(mode == .watch && tmuxSession.isEmpty)
             }
         }
         .padding(20)
