@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import Vapor
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var sigintSource: DispatchSourceSignal?
@@ -32,13 +31,11 @@ struct TapbackApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarView()
-                .environmentObject(sessionManager)
-                .environmentObject(serverManager)
+            MenuBarContent()
         } label: {
             Image(systemName: serverManager.isRunning ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
 
         Window("Tapback", id: "main") {
             ContentView()
@@ -47,5 +44,25 @@ struct TapbackApp: App {
         }
         .windowStyle(.titleBar)
         .windowResizability(.contentSize)
+    }
+}
+
+struct MenuBarContent: View {
+    @Environment(\.openWindow) var openWindow
+
+    var body: some View {
+        Button("Open Window") {
+            NSApp.setActivationPolicy(.regular)
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        .keyboardShortcut("o")
+
+        Divider()
+
+        Button("Quit") {
+            NSApp.terminate(nil)
+        }
+        .keyboardShortcut("q")
     }
 }

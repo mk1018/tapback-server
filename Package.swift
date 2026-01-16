@@ -11,12 +11,14 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/vapor/vapor.git", from: "4.89.0"),
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", branch: "main"),
     ],
     targets: [
         .executableTarget(
             name: "TapbackApp",
             dependencies: [
                 .product(name: "Vapor", package: "vapor"),
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
             ]
         ),
     ]

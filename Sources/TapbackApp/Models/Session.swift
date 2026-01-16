@@ -13,6 +13,7 @@ struct Session: Identifiable, Codable {
     var tmuxSession: String?
     var port: Int?
     var isActive: Bool
+    var isManaged: Bool // アプリが作成・管理するセッション
 
     init(
         id: UUID = UUID(),
@@ -20,7 +21,8 @@ struct Session: Identifiable, Codable {
         type: SessionType,
         tmuxSession: String? = nil,
         port: Int? = nil,
-        isActive: Bool = false
+        isActive: Bool = false,
+        isManaged: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -28,5 +30,6 @@ struct Session: Identifiable, Codable {
         self.tmuxSession = tmuxSession
         self.port = port
         self.isActive = isActive
+        self.isManaged = isManaged
     }
 }
