@@ -1,21 +1,7 @@
 import Foundation
 
 enum HTMLTemplates {
-    static func mainPage(sessions: [Session], appURL: String? = nil, quickButtons: [QuickButton] = []) -> String {
-        let sessionTabButtons = sessions.enumerated().map { index, session in
-            """
-            <button class="stab\(index == 0 ? " active" : "")" data-id="\(session.id.uuidString)">\(session.name)</button>
-            """
-        }.joined()
-
-        let sessionTabContents = sessions.enumerated().map { index, session in
-            """
-            <div class="stab-content\(index == 0 ? " active" : "")" data-id="\(session.id.uuidString)">
-                <div class="term" id="term-\(session.id.uuidString)"></div>
-            </div>
-            """
-        }.joined()
-
+    static func mainPage(appURL: String? = nil, quickButtons: [QuickButton] = []) -> String {
         let customButtonsHtml = quickButtons.map { button in
             let escapedCommand = button.command
                 .replacingOccurrences(of: "\\", with: "\\\\")
@@ -50,10 +36,7 @@ enum HTMLTemplates {
         .stabs{display:flex;gap:4px;padding:8px;background:#161b22;border-bottom:1px solid #30363d;overflow-x:auto;flex-shrink:0;-webkit-overflow-scrolling:touch}
         .stab{padding:8px 16px;background:#21262d;border:none;border-radius:8px;color:#8b949e;font-size:14px;cursor:pointer;white-space:nowrap}
         .stab.active{background:#8b5cf6;color:#fff}
-        #term-contents{flex:1;overflow:hidden;display:flex;flex-direction:column}
-        .stab-content{display:none;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-all;font-family:monospace}
-        .stab-content.active{display:flex;flex-direction:column}
-        .term{flex:1}
+        #term-contents{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-all;font-family:monospace}
         #in{padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom));background:#161b22;border-top:1px solid #30363d;flex-shrink:0}
         .row{display:flex;gap:8px;align-items:center}
         .quick{margin-bottom:8px}
@@ -65,6 +48,7 @@ enum HTMLTemplates {
         #txt{flex:1;padding:12px 14px;font-size:16px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:10px;min-width:0}
         #txt:focus{outline:none;border-color:#8b5cf6}
         .bsend{background:#8b5cf6;color:#fff}
+        .empty{color:#8b949e;text-align:center;padding:20px}
                 </style></head>
         <body>
         <div id="h"><span class="t">Tapback</span><span class="s" id="st">...</span></div>
@@ -73,8 +57,8 @@ enum HTMLTemplates {
             \(appURL != nil ? "<a class=\"mtab\" href=\"\(appURL!)\">App</a>" : "")
         </div>
         <div id="terminal-view" class="mode-content active">
-            <div class="stabs">\(sessionTabButtons)</div>
-            <div id="term-contents">\(sessionTabContents)</div>
+            <div class="stabs" id="stabs"></div>
+            <div id="term-contents"></div>
             <div id="in">
                 <div class="row quick">
                     <button class="btn bq" data-v="0">0</button>
@@ -92,7 +76,64 @@ enum HTMLTemplates {
         </div>
         <script>
         const st=document.getElementById('st'),txt=document.getElementById('txt');
-        let ws,activeId='\(sessions.first?.id.uuidString ?? "")';
+        const stabs=document.getElementById('stabs'),contents=document.getElementById('term-contents');
+        let ws,activeId='',sessions=[],outputs={};
+
+        async function loadSessions(){
+            try{
+                const r=await fetch('/api/sessions');
+                const newSessions=await r.json();
+                const newNames=newSessions.map(s=>s.name).sort().join(',');
+                const oldNames=sessions.map(s=>s.name).sort().join(',');
+                if(newNames!==oldNames){
+                    sessions=newSessions;
+                    renderTabs();
+                }
+            }catch(e){console.error(e)}
+        }
+
+        function renderTabs(){
+            const prevActive=activeId;
+            stabs.innerHTML='';
+            if(sessions.length===0){
+                contents.innerHTML='<div class="empty">No tmux sessions found</div>';
+                activeId='';
+                return;
+            }
+            if(!prevActive||!sessions.find(s=>s.name===prevActive)){
+                activeId=sessions[0].name;
+            }
+            sessions.forEach(s=>{
+                const btn=document.createElement('button');
+                btn.className='stab'+(s.name===activeId?' active':'');
+                btn.dataset.id=s.name;
+                btn.textContent=s.name;
+                btn.onclick=()=>selectSession(s.name);
+                stabs.appendChild(btn);
+            });
+            updateContent();
+        }
+
+        function selectSession(id){
+            activeId=id;
+            document.querySelectorAll('.stab').forEach(el=>{
+                el.classList.toggle('active',el.dataset.id===id);
+            });
+            updateContent();
+        }
+
+        function updateContent(){
+            if(!activeId){contents.innerHTML='';return;}
+            const text=outputs[activeId]||'(waiting for output...)';
+            const wasAtBottom=contents.scrollHeight-contents.scrollTop-contents.clientHeight<50;
+            contents.innerHTML='['+activeId+']\\n'+escapeHtml(text);
+            if(wasAtBottom)contents.scrollTop=contents.scrollHeight;
+        }
+
+        function escapeHtml(t){
+            return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
         function connect(){
             const p=location.protocol==='https:'?'wss:':'ws:';
             ws=new WebSocket(p+'//'+location.host+'/ws');
@@ -100,25 +141,27 @@ enum HTMLTemplates {
             ws.onmessage=(e)=>{
                 const d=JSON.parse(e.data);
                 if(d.t==='o'){
-                    const term=document.getElementById('term-'+d.id);
-                    if(term)term.textContent=d.c;
+                    outputs[d.id]=d.c;
+                    if(d.id===activeId)updateContent();
+                    if(!sessions.find(s=>s.name===d.id)){
+                        sessions.push({name:d.id});
+                        renderTabs();
+                    }
                 }
             };
             ws.onclose=()=>{st.textContent='Reconnecting...';st.className='s off';setTimeout(connect,2000)};
             ws.onerror=()=>ws.close();
         }
-        function send(v){if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'i',id:activeId,c:v}))}
-        // Session tabs
-        document.querySelectorAll('.stab').forEach(t=>t.onclick=()=>{
-            document.querySelectorAll('.stab,.stab-content').forEach(el=>el.classList.remove('active'));
-            t.classList.add('active');
-            activeId=t.dataset.id;
-            document.querySelector('.stab-content[data-id="'+activeId+'"]').classList.add('active');
-        });
+
+        function send(v){if(ws&&ws.readyState===1&&activeId)ws.send(JSON.stringify({t:'i',id:activeId,c:v}))}
+
         document.querySelectorAll('.bq').forEach(b=>b.onclick=()=>send(b.dataset.v));
         document.getElementById('send').onclick=()=>{send(txt.value);txt.value=''};
         txt.onkeypress=(e)=>{if(e.key==='Enter'){send(txt.value);txt.value=''}};
+
+        loadSessions();
         connect();
+        setInterval(loadSessions,5000);
         </script>
         </body></html>
         """

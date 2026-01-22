@@ -14,7 +14,7 @@ enum TmuxHelper {
                 let pipe = Pipe()
 
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = ["tmux", "capture-pane", "-t", session, "-p", "-S", "-100"]
+                process.arguments = ["tmux", "capture-pane", "-t", "\(session):0.0", "-p", "-S", "-100"]
                 process.environment = environment
                 process.standardOutput = pipe
                 process.standardError = FileHandle.nullDevice
@@ -38,7 +38,7 @@ enum TmuxHelper {
                 if !text.isEmpty {
                     let textProcess = Process()
                     textProcess.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                    textProcess.arguments = ["tmux", "send-keys", "-t", session, "-l", text]
+                    textProcess.arguments = ["tmux", "send-keys", "-t", "\(session):0.0", "-l", text]
                     textProcess.environment = environment
                     textProcess.standardOutput = FileHandle.nullDevice
                     textProcess.standardError = FileHandle.nullDevice
@@ -50,7 +50,7 @@ enum TmuxHelper {
 
                 let enterProcess = Process()
                 enterProcess.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                enterProcess.arguments = ["tmux", "send-keys", "-t", session, "Enter"]
+                enterProcess.arguments = ["tmux", "send-keys", "-t", "\(session):0.0", "Enter"]
                 enterProcess.environment = environment
                 enterProcess.standardOutput = FileHandle.nullDevice
                 enterProcess.standardError = FileHandle.nullDevice
