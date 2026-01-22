@@ -37,8 +37,6 @@ jobs:
           zip -r Tapback-${{ github.ref_name }}-arm64.zip Tapback.app
 
       - name: Upload Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: dist/Tapback-${{ github.ref_name }}-arm64.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
