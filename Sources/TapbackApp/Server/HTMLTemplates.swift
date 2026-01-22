@@ -36,10 +36,7 @@ enum HTMLTemplates {
         .stabs{display:flex;gap:4px;padding:8px;background:#161b22;border-bottom:1px solid #30363d;overflow-x:auto;flex-shrink:0;-webkit-overflow-scrolling:touch}
         .stab{padding:8px 16px;background:#21262d;border:none;border-radius:8px;color:#8b949e;font-size:14px;cursor:pointer;white-space:nowrap}
         .stab.active{background:#8b5cf6;color:#fff}
-        #term-contents{flex:1;overflow:hidden;display:flex;flex-direction:column}
-        .stab-content{display:none;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-all;font-family:monospace}
-        .stab-content.active{display:flex;flex-direction:column}
-        .term{flex:1}
+        #term-contents{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-all;font-family:monospace}
         #in{padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom));background:#161b22;border-top:1px solid #30363d;flex-shrink:0}
         .row{display:flex;gap:8px;align-items:center}
         .quick{margin-bottom:8px}
@@ -80,45 +77,61 @@ enum HTMLTemplates {
         <script>
         const st=document.getElementById('st'),txt=document.getElementById('txt');
         const stabs=document.getElementById('stabs'),contents=document.getElementById('term-contents');
-        let ws,activeId='',sessions=[];
+        let ws,activeId='',sessions=[],outputs={};
 
         async function loadSessions(){
             try{
                 const r=await fetch('/api/sessions');
-                sessions=await r.json();
-                renderSessions();
+                const newSessions=await r.json();
+                const newNames=newSessions.map(s=>s.name).sort().join(',');
+                const oldNames=sessions.map(s=>s.name).sort().join(',');
+                if(newNames!==oldNames){
+                    sessions=newSessions;
+                    renderTabs();
+                }
             }catch(e){console.error(e)}
         }
 
-        function renderSessions(){
+        function renderTabs(){
+            const prevActive=activeId;
             stabs.innerHTML='';
-            contents.innerHTML='';
             if(sessions.length===0){
                 contents.innerHTML='<div class="empty">No tmux sessions found</div>';
+                activeId='';
                 return;
             }
-            sessions.forEach((s,i)=>{
+            if(!prevActive||!sessions.find(s=>s.name===prevActive)){
+                activeId=sessions[0].name;
+            }
+            sessions.forEach(s=>{
                 const btn=document.createElement('button');
-                btn.className='stab'+(i===0?' active':'');
+                btn.className='stab'+(s.name===activeId?' active':'');
                 btn.dataset.id=s.name;
                 btn.textContent=s.name;
                 btn.onclick=()=>selectSession(s.name);
                 stabs.appendChild(btn);
-
-                const div=document.createElement('div');
-                div.className='stab-content'+(i===0?' active':'');
-                div.dataset.id=s.name;
-                div.innerHTML='<div class="term" id="term-'+s.name+'"></div>';
-                contents.appendChild(div);
             });
-            if(!activeId&&sessions.length>0)activeId=sessions[0].name;
+            updateContent();
         }
 
         function selectSession(id){
             activeId=id;
-            document.querySelectorAll('.stab,.stab-content').forEach(el=>el.classList.remove('active'));
-            document.querySelector('.stab[data-id="'+id+'"]')?.classList.add('active');
-            document.querySelector('.stab-content[data-id="'+id+'"]')?.classList.add('active');
+            document.querySelectorAll('.stab').forEach(el=>{
+                el.classList.toggle('active',el.dataset.id===id);
+            });
+            updateContent();
+        }
+
+        function updateContent(){
+            if(!activeId){contents.innerHTML='';return;}
+            const text=outputs[activeId]||'(waiting for output...)';
+            const wasAtBottom=contents.scrollHeight-contents.scrollTop-contents.clientHeight<50;
+            contents.innerHTML='['+activeId+']\\n'+escapeHtml(text);
+            if(wasAtBottom)contents.scrollTop=contents.scrollHeight;
+        }
+
+        function escapeHtml(t){
+            return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
         function connect(){
@@ -128,16 +141,12 @@ enum HTMLTemplates {
             ws.onmessage=(e)=>{
                 const d=JSON.parse(e.data);
                 if(d.t==='o'){
-                    let term=document.getElementById('term-'+d.id);
-                    if(!term){
-                        // New session appeared, reload sessions
-                        if(!sessions.find(s=>s.name===d.id)){
-                            sessions.push({name:d.id});
-                            renderSessions();
-                            term=document.getElementById('term-'+d.id);
-                        }
+                    outputs[d.id]=d.c;
+                    if(d.id===activeId)updateContent();
+                    if(!sessions.find(s=>s.name===d.id)){
+                        sessions.push({name:d.id});
+                        renderTabs();
                     }
-                    if(term)term.textContent=d.c;
                 }
             };
             ws.onclose=()=>{st.textContent='Reconnecting...';st.className='s off';setTimeout(connect,2000)};

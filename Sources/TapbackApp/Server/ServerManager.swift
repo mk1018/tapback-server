@@ -91,7 +91,7 @@ class ServerManager: ObservableObject {
         getLocalIP()
     }
 
-    func start(sessionManager: SessionManager) {
+    func start() {
         guard !isRunning else { return }
 
         pin = String(format: "%04d", Int.random(in: 0 ... 9999))
@@ -116,7 +116,6 @@ class ServerManager: ObservableObject {
 
                 await configureTerminalRoutes(
                     app: app,
-                    sessionManager: sessionManager,
                     authToken: authToken,
                     macIP: macIP,
                     appPort: firstExternalPort,
@@ -206,7 +205,6 @@ class ServerManager: ObservableObject {
 
     private func configureTerminalRoutes(
         app: Application,
-        sessionManager _: SessionManager,
         authToken: String,
         macIP: String,
         appPort: Int?,

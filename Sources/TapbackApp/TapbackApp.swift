@@ -26,12 +26,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct TapbackApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var sessionManager = SessionManager()
     @StateObject private var serverManager = ServerManager()
 
     var body: some Scene {
         MenuBarExtra {
             MenuBarContent()
+                .environmentObject(serverManager)
         } label: {
             Image(systemName: serverManager.isRunning ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
         }
@@ -39,7 +39,6 @@ struct TapbackApp: App {
 
         Window("Tapback", id: "main") {
             ContentView()
-                .environmentObject(sessionManager)
                 .environmentObject(serverManager)
         }
         .windowStyle(.titleBar)
@@ -49,8 +48,24 @@ struct TapbackApp: App {
 
 struct MenuBarContent: View {
     @Environment(\.openWindow) var openWindow
+    @EnvironmentObject var serverManager: ServerManager
 
     var body: some View {
+        if serverManager.isRunning {
+            Text(serverManager.serverURL)
+            Text("PIN: \(serverManager.pin)")
+            Divider()
+            Button("Stop Server") {
+                serverManager.stop()
+            }
+        } else {
+            Button("Start Server") {
+                serverManager.start()
+            }
+        }
+
+        Divider()
+
         Button("Open Window") {
             NSApp.setActivationPolicy(.regular)
             openWindow(id: "main")
