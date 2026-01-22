@@ -206,7 +206,7 @@ class ServerManager: ObservableObject {
 
     private func configureTerminalRoutes(
         app: Application,
-        sessionManager: SessionManager,
+        sessionManager _: SessionManager,
         authToken: String,
         macIP: String,
         appPort: Int?,
@@ -226,7 +226,7 @@ class ServerManager: ObservableObject {
                 }
             }
 
-            let html = await HTMLTemplates.mainPage(sessions: sessionManager.sessions, appURL: appURL, quickButtons: quickButtons)
+            let html = HTMLTemplates.mainPage(appURL: appURL, quickButtons: quickButtons)
             return Response(
                 status: .ok,
                 headers: ["Content-Type": "text/html"],
@@ -288,16 +288,29 @@ class ServerManager: ObservableObject {
             return response
         }
 
+        // API endpoint to list all tmux sessions
+        app.get("api", "sessions") { _ async -> Response in
+            let sessions = await TmuxHelper.listSessions()
+            let json = sessions.map { "{\"name\":\"\($0)\"}" }.joined(separator: ",")
+            return Response(
+                status: .ok,
+                headers: ["Content-Type": "application/json"],
+                body: .init(string: "[\(json)]")
+            )
+        }
+
         // WebSocket endpoint for terminal
         app.webSocket("ws") { _, ws async in
             await MainActor.run {
                 self.connectedClients += 1
             }
 
-            for session in await sessionManager.sessions where session.isActive {
-                let output = await sessionManager.getOutput(for: session.id)
+            // Send initial output for all tmux sessions
+            let tmuxSessions = await TmuxHelper.listSessions()
+            for sessionName in tmuxSessions {
+                let output = await TmuxHelper.capture(session: sessionName)
                 try? await ws.send("""
-                {"t":"o","id":"\(session.id.uuidString)","c":"\(output.escaped)"}
+                {"t":"o","id":"\(sessionName)","c":"\(output.escaped)"}
                 """)
             }
 
@@ -308,16 +321,18 @@ class ServerManager: ObservableObject {
                     return
                 }
 
-                if msg.t == "i", let sessionId = UUID(uuidString: msg.id ?? "") {
-                    await sessionManager.sendInput(msg.c ?? "", to: sessionId)
+                // Handle input - id is now tmux session name directly
+                if msg.t == "i", let sessionName = msg.id, !sessionName.isEmpty {
+                    await TmuxHelper.sendKeys(session: sessionName, text: msg.c ?? "")
                 }
             }
 
             while !ws.isClosed {
-                for session in await sessionManager.sessions where session.isActive {
-                    let output = await sessionManager.getOutput(for: session.id)
+                let currentSessions = await TmuxHelper.listSessions()
+                for sessionName in currentSessions {
+                    let output = await TmuxHelper.capture(session: sessionName)
                     try? await ws.send("""
-                    {"t":"o","id":"\(session.id.uuidString)","c":"\(output.escaped)"}
+                    {"t":"o","id":"\(sessionName)","c":"\(output.escaped)"}
                     """)
                 }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
