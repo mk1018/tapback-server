@@ -14,7 +14,7 @@ enum TmuxHelper {
                 let pipe = Pipe()
 
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = ["tmux", "capture-pane", "-t", "\(session):0.0", "-p", "-S", "-100"]
+                process.arguments = ["tmux", "capture-pane", "-t", "\(session):0.0", "-p", "-S", "-300"]
                 process.environment = environment
                 process.standardOutput = pipe
                 process.standardError = FileHandle.nullDevice
@@ -132,6 +132,32 @@ enum TmuxHelper {
                 } catch {}
 
                 continuation.resume()
+            }
+        }
+    }
+
+    static func getCurrentPath(session: String) async -> String? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                let pipe = Pipe()
+
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                process.arguments = ["tmux", "display-message", "-t", "\(session):0.0", "-p", "#{pane_current_path}"]
+                process.environment = environment
+                process.standardOutput = pipe
+                process.standardError = FileHandle.nullDevice
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    continuation.resume(returning: output?.isEmpty == false ? output : nil)
+                } catch {
+                    continuation.resume(returning: nil)
+                }
             }
         }
     }
