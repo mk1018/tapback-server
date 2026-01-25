@@ -1,26 +1,25 @@
 import AppKit
-import SwiftTerm
 import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var serverManager: ServerManager
     @State private var showingProxySettings = false
     @State private var showingQuickButtonSettings = false
-    @State private var tmuxSessions: [String] = []
-    @State private var selectedSession: String?
+    @State private var showingHooksAlert = false
+    @State private var hooksAlertMessage = ""
 
     var body: some View {
         ZStack {
-            VStack(spacing: 0) {
-                // Server status bar
+            VStack(spacing: 16) {
+                // Server status
                 HStack {
                     Circle()
                         .fill(serverManager.isRunning ? Color.green : Color.red)
-                        .frame(width: 8, height: 8)
+                        .frame(width: 12, height: 12)
 
                     if serverManager.isRunning {
                         Text(serverManager.serverURL)
-                            .font(.system(.body, design: .monospaced))
+                            .font(.system(.title3, design: .monospaced))
 
                         Button(action: {
                             NSPasteboard.general.clearContents()
@@ -30,47 +29,9 @@ struct ContentView: View {
                         }
                         .buttonStyle(.borderless)
                         .help("Copy URL")
-
-                        if !serverManager.proxyPorts.isEmpty {
-                            Text("Proxy: \(serverManager.proxyPorts.count) ports")
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundColor(.orange)
-                        }
-
-                        Text(serverManager.pinEnabled ? "PIN: \(serverManager.pin)" : "PIN: OFF")
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                            .fixedSize()
-
-                        Text("\(serverManager.connectedClients) connected")
-                            .foregroundColor(.secondary)
                     } else {
                         Text("Server stopped")
-                            .foregroundColor(.secondary)
-
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(serverManager.pinEnabled ? Color.green : Color.orange)
-                                .frame(width: 8, height: 8)
-                            Text("PIN")
-                            Toggle("", isOn: $serverManager.pinEnabled)
-                                .toggleStyle(.switch)
-                                .labelsHidden()
-                        }
-
-                        Button("Proxy Settings") {
-                            showingProxySettings = true
-                        }
-
-                        Text("\(serverManager.proxyPorts.count) ports")
-                            .foregroundColor(.secondary)
-
-                        Button("Quick Buttons") {
-                            showingQuickButtonSettings = true
-                        }
-
-                        Text("\(serverManager.quickButtons.count) buttons")
+                            .font(.title3)
                             .foregroundColor(.secondary)
                     }
 
@@ -83,58 +44,87 @@ struct ContentView: View {
                             serverManager.start()
                         }
                     }
+                }
 
-                    Button("Quit") {
-                        NSApplication.shared.terminate(nil)
+                if serverManager.isRunning {
+                    HStack {
+                        Text("PIN: \(serverManager.pin)")
+                            .font(.system(.body, design: .monospaced))
+
+                        Spacer()
+
+                        Text("\(serverManager.connectedClients) connected")
+                            .foregroundColor(.secondary)
                     }
                 }
-                .padding()
-                .background(Color(NSColor.controlBackgroundColor))
 
                 Divider()
 
-                // Session tabs
-                if !tmuxSessions.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 4) {
-                            ForEach(tmuxSessions, id: \.self) { session in
-                                Button(action: { selectedSession = session }) {
-                                    Text(session)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .background(selectedSession == session ? Color.accentColor : Color(NSColor.controlBackgroundColor))
-                                        .foregroundColor(selectedSession == session ? .white : .primary)
-                                        .cornerRadius(6)
-                                }
-                                .buttonStyle(.plain)
+                // Settings (only when stopped)
+                if !serverManager.isRunning {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Toggle("PIN Authentication", isOn: $serverManager.pinEnabled)
+                            Spacer()
+                        }
+
+                        HStack {
+                            Text("Proxy Ports")
+                            Spacer()
+                            Text("\(serverManager.proxyPorts.count) configured")
+                                .foregroundColor(.secondary)
+                            Button("Edit") {
+                                showingProxySettings = true
                             }
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                    }
-                    .background(Color(NSColor.windowBackgroundColor))
 
-                    Divider()
+                        HStack {
+                            Text("Quick Buttons")
+                            Spacer()
+                            Text("\(serverManager.quickButtons.count) configured")
+                                .foregroundColor(.secondary)
+                            Button("Edit") {
+                                showingQuickButtonSettings = true
+                            }
+                        }
+
+                        HStack {
+                            Text("Claude Code Hooks")
+                            Spacer()
+                            if serverManager.isHooksInstalled {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 8, height: 8)
+                                Text("Installed")
+                                    .foregroundColor(.secondary)
+                                Button("Uninstall") {
+                                    let result = serverManager.uninstallHooks()
+                                    hooksAlertMessage = result.message
+                                    showingHooksAlert = true
+                                }
+                            } else {
+                                Circle()
+                                    .fill(Color.orange)
+                                    .frame(width: 8, height: 8)
+                                Text("Not installed")
+                                    .foregroundColor(.secondary)
+                                Button("Install") {
+                                    let result = serverManager.installHooks()
+                                    hooksAlertMessage = result.message
+                                    showingHooksAlert = true
+                                }
+                            }
+                        }
+                    }
                 }
 
-                // Terminal view
-                if let session = selectedSession {
-                    TerminalContainerView(tmuxSession: session)
-                        .id(session)
-                } else {
-                    VStack {
-                        Spacer()
-                        if tmuxSessions.isEmpty {
-                            Text("No tmux sessions found")
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("Select a session")
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                    }
+                Spacer()
+
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
                 }
             }
+            .padding()
 
             if showingProxySettings {
                 Color.black.opacity(0.3)
@@ -158,64 +148,12 @@ struct ContentView: View {
                     .environmentObject(serverManager)
             }
         }
-        .frame(minWidth: 600, minHeight: 400)
-        .task {
-            await refreshSessions()
+        .frame(minWidth: 400, minHeight: 250)
+        .alert("Hooks", isPresented: $showingHooksAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(hooksAlertMessage)
         }
-        .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in
-            Task { await refreshSessions() }
-        }
-    }
-
-    private func refreshSessions() async {
-        let sessions = await TmuxHelper.listSessions()
-        await MainActor.run {
-            tmuxSessions = sessions
-            if selectedSession == nil, let first = sessions.first {
-                selectedSession = first
-            }
-            if let selected = selectedSession, !sessions.contains(selected) {
-                selectedSession = sessions.first
-            }
-        }
-    }
-}
-
-struct TerminalContainerView: NSViewRepresentable {
-    let tmuxSession: String
-
-    func makeNSView(context: Context) -> LocalProcessTerminalView {
-        let terminalView = LocalProcessTerminalView(frame: .zero)
-        terminalView.processDelegate = context.coordinator
-
-        terminalView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        terminalView.nativeForegroundColor = NSColor.white
-        terminalView.nativeBackgroundColor = NSColor.black
-        terminalView.getTerminal().setCursorStyle(.blinkBlock)
-
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        var envDict = ProcessInfo.processInfo.environment
-        envDict["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (envDict["PATH"] ?? "")
-        envDict["LANG"] = "en_US.UTF-8"
-        envDict["LC_ALL"] = "en_US.UTF-8"
-        envDict["TERM"] = "xterm-256color"
-        let env = envDict.map { "\($0.key)=\($0.value)" }
-        terminalView.startProcess(executable: shell, args: ["-l", "-c", "tmux set-option -g default-terminal 'xterm-256color' \\; attach -t \(tmuxSession)"], environment: env)
-
-        return terminalView
-    }
-
-    func updateNSView(_: LocalProcessTerminalView, context _: Context) {}
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
-        func processTerminated(source _: TerminalView, exitCode _: Int32?) {}
-        func sizeChanged(source _: LocalProcessTerminalView, newCols _: Int, newRows _: Int) {}
-        func setTerminalTitle(source _: LocalProcessTerminalView, title _: String) {}
-        func hostCurrentDirectoryUpdate(source _: TerminalView, directory _: String?) {}
     }
 }
 

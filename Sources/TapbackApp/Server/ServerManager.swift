@@ -13,6 +13,46 @@ struct QuickButton: Identifiable, Codable, Equatable {
     }
 }
 
+// Claude Code session status
+struct ClaudeStatus: Codable, Equatable {
+    let sessionId: String
+    let status: String // "starting", "processing", "idle", "waiting", "ended"
+    let projectDir: String?
+    let model: String?
+    let timestamp: Date
+
+    enum CodingKeys: String, CodingKey {
+        case sessionId = "session_id"
+        case status
+        case projectDir = "project_dir"
+        case model
+        case timestamp
+    }
+}
+
+// Actor for thread-safe status storage
+actor ClaudeStatusStore {
+    // Key by project_dir instead of session_id
+    private var statuses: [String: ClaudeStatus] = [:]
+
+    func update(_ status: ClaudeStatus) {
+        // Use project_dir as key if available, otherwise session_id
+        let key = status.projectDir ?? status.sessionId
+        statuses[key] = status
+        // Clean up old sessions (older than 1 hour)
+        let cutoff = Date().addingTimeInterval(-3600)
+        statuses = statuses.filter { $0.value.timestamp > cutoff }
+    }
+
+    func getAll() -> [ClaudeStatus] {
+        Array(statuses.values).sorted { $0.timestamp > $1.timestamp }
+    }
+
+    func get(projectDir: String) -> ClaudeStatus? {
+        statuses[projectDir]
+    }
+}
+
 @MainActor
 class ServerManager: ObservableObject {
     @Published var isRunning = false
@@ -44,8 +84,192 @@ class ServerManager: ObservableObject {
     private var proxyServerTasks: [Int: Task<Void, Never>] = [:]
     private var isLoading = false
 
+    // Claude Code status management
+    let claudeStatusStore = ClaudeStatusStore()
+    private var wsConnections: [WebSocket] = []
+    private let wsLock = NSLock()
+
     init() {
         loadSettings()
+    }
+
+    // MARK: - Claude Code Hooks Installation
+
+    var isHooksInstalled: Bool {
+        let hookPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/hooks/tapback-status-hook.sh")
+        return FileManager.default.fileExists(atPath: hookPath.path)
+    }
+
+    func installHooks() -> (success: Bool, message: String) {
+        let fm = FileManager.default
+        let homeDir = fm.homeDirectoryForCurrentUser
+        let claudeDir = homeDir.appendingPathComponent(".claude")
+        let hooksDir = claudeDir.appendingPathComponent("hooks")
+        let hookScriptPath = hooksDir.appendingPathComponent("tapback-status-hook.sh")
+        let settingsPath = claudeDir.appendingPathComponent("settings.json")
+
+        // Create hooks directory if needed
+        do {
+            try fm.createDirectory(at: hooksDir, withIntermediateDirectories: true)
+        } catch {
+            return (false, "Failed to create hooks directory: \(error.localizedDescription)")
+        }
+
+        // Write hook script
+        let hookScript = """
+        #!/bin/bash
+        # Tapback Status Hook for Claude Code
+        # Auto-installed by Tapback
+
+        set -e
+
+        input=$(cat)
+
+        hook_event_name=$(echo "$input" | jq -r '.hook_event_name // empty')
+        session_id=$(echo "$input" | jq -r '.session_id // empty')
+        cwd=$(echo "$input" | jq -r '.cwd // empty')
+        model=$(echo "$input" | jq -r '.model // empty')
+
+        if [ -z "$session_id" ]; then
+            exit 0
+        fi
+
+        case "$hook_event_name" in
+            "SessionStart") status="starting" ;;
+            "UserPromptSubmit") status="processing" ;;
+            "Stop") status="idle" ;;
+            "Notification")
+                notification_type=$(echo "$input" | jq -r '.notification_type // empty')
+                if [ "$notification_type" = "idle_prompt" ]; then
+                    status="waiting"
+                else
+                    exit 0
+                fi
+                ;;
+            "SessionEnd") status="ended" ;;
+            *) exit 0 ;;
+        esac
+
+        TAPBACK_URL="${TAPBACK_URL:-http://localhost:9876}"
+
+        curl -s -X POST "${TAPBACK_URL}/api/claude-status" \\
+            -H "Content-Type: application/json" \\
+            -d "{\\"session_id\\":\\"$session_id\\",\\"status\\":\\"$status\\",\\"project_dir\\":\\"$cwd\\",\\"model\\":\\"$model\\"}" \\
+            >/dev/null 2>&1 || true
+
+        exit 0
+        """
+
+        do {
+            try hookScript.write(to: hookScriptPath, atomically: true, encoding: .utf8)
+            // Make executable
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hookScriptPath.path)
+        } catch {
+            return (false, "Failed to write hook script: \(error.localizedDescription)")
+        }
+
+        // Update settings.json
+        let hookCommand = hookScriptPath.path
+        let hooksConfig: [String: Any] = [
+            "SessionStart": [["hooks": [["type": "command", "command": hookCommand]]]],
+            "UserPromptSubmit": [["hooks": [["type": "command", "command": hookCommand]]]],
+            "Stop": [["hooks": [["type": "command", "command": hookCommand]]]],
+            "Notification": [["matcher": "idle_prompt", "hooks": [["type": "command", "command": hookCommand]]]],
+            "SessionEnd": [["hooks": [["type": "command", "command": hookCommand]]]]
+        ]
+
+        var settings: [String: Any] = [:]
+
+        // Read existing settings
+        if let data = try? Data(contentsOf: settingsPath),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        {
+            settings = existing
+        }
+
+        // Merge hooks (append to existing, don't overwrite)
+        if var existingHooks = settings["hooks"] as? [String: Any] {
+            for (key, value) in hooksConfig {
+                if var existingArray = existingHooks[key] as? [[String: Any]],
+                   let newArray = value as? [[String: Any]]
+                {
+                    // Check if Tapback hook already exists
+                    let hasTapbackHook = existingArray.contains { item in
+                        guard let hooks = item["hooks"] as? [[String: Any]] else { return false }
+                        return hooks.contains { ($0["command"] as? String)?.contains("tapback-status-hook.sh") == true }
+                    }
+                    if !hasTapbackHook {
+                        existingArray.append(contentsOf: newArray)
+                    }
+                    existingHooks[key] = existingArray
+                } else {
+                    existingHooks[key] = value
+                }
+            }
+            settings["hooks"] = existingHooks
+        } else {
+            settings["hooks"] = hooksConfig
+        }
+
+        // Write settings
+        do {
+            let data = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: settingsPath)
+        } catch {
+            return (false, "Failed to update settings.json: \(error.localizedDescription)")
+        }
+
+        return (true, "Hooks installed successfully. Restart Claude Code to apply.")
+    }
+
+    func uninstallHooks() -> (success: Bool, message: String) {
+        let fm = FileManager.default
+        let homeDir = fm.homeDirectoryForCurrentUser
+        let claudeDir = homeDir.appendingPathComponent(".claude")
+        let hooksDir = claudeDir.appendingPathComponent("hooks")
+        let hookScriptPath = hooksDir.appendingPathComponent("tapback-status-hook.sh")
+        let settingsPath = claudeDir.appendingPathComponent("settings.json")
+
+        // Remove hook script
+        if fm.fileExists(atPath: hookScriptPath.path) {
+            do {
+                try fm.removeItem(at: hookScriptPath)
+            } catch {
+                return (false, "Failed to remove hook script: \(error.localizedDescription)")
+            }
+        }
+
+        // Remove hooks from settings.json
+        if let data = try? Data(contentsOf: settingsPath),
+           var settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           var hooks = settings["hooks"] as? [String: Any]
+        {
+            // Remove Tapback hooks
+            for key in ["SessionStart", "UserPromptSubmit", "Stop", "Notification", "SessionEnd"] {
+                if let hookArray = hooks[key] as? [[String: Any]] {
+                    let filtered = hookArray.filter { item in
+                        guard let innerHooks = item["hooks"] as? [[String: Any]] else { return true }
+                        return !innerHooks.contains { h in
+                            (h["command"] as? String)?.contains("tapback-status-hook.sh") == true
+                        }
+                    }
+                    if filtered.isEmpty {
+                        hooks.removeValue(forKey: key)
+                    } else {
+                        hooks[key] = filtered
+                    }
+                }
+            }
+
+            settings["hooks"] = hooks.isEmpty ? nil : hooks
+
+            if let data = try? JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: settingsPath)
+            }
+        }
+
+        return (true, "Hooks uninstalled successfully.")
     }
 
     private func saveSettings() {
@@ -297,19 +521,91 @@ class ServerManager: ObservableObject {
             )
         }
 
+        // API endpoint to receive Claude Code status from hooks
+        app.post("api", "claude-status") { [weak self] req async -> Response in
+            guard let self else {
+                return Response(status: .internalServerError)
+            }
+
+            struct StatusRequest: Content {
+                let session_id: String
+                let status: String
+                let project_dir: String?
+                let model: String?
+            }
+
+            guard let statusReq = try? req.content.decode(StatusRequest.self) else {
+                return Response(status: .badRequest, body: .init(string: "Invalid request"))
+            }
+
+            let status = ClaudeStatus(
+                sessionId: statusReq.session_id,
+                status: statusReq.status,
+                projectDir: statusReq.project_dir,
+                model: statusReq.model,
+                timestamp: Date()
+            )
+
+            await self.broadcastStatus(status)
+
+            return Response(
+                status: .ok,
+                headers: ["Content-Type": "application/json"],
+                body: .init(string: "{\"ok\":true}")
+            )
+        }
+
+        // API endpoint to get all Claude Code statuses
+        app.get("api", "claude-status") { [weak self] _ async -> Response in
+            guard let self else {
+                return Response(status: .internalServerError)
+            }
+
+            let statuses = await self.claudeStatusStore.getAll()
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            guard let data = try? encoder.encode(statuses),
+                  let json = String(data: data, encoding: .utf8)
+            else {
+                return Response(status: .internalServerError)
+            }
+
+            return Response(
+                status: .ok,
+                headers: ["Content-Type": "application/json"],
+                body: .init(string: json)
+            )
+        }
+
         // WebSocket endpoint for terminal
-        app.webSocket("ws") { _, ws async in
+        app.webSocket("ws") { [weak self] _, ws async in
+            guard let self else { return }
+
             await MainActor.run {
                 self.connectedClients += 1
             }
+            self.addWebSocket(ws)
 
             // Send initial output for all tmux sessions
             let tmuxSessions = await TmuxHelper.listSessions()
             for sessionName in tmuxSessions {
                 let output = await TmuxHelper.capture(session: sessionName)
+                let path = await TmuxHelper.getCurrentPath(session: sessionName) ?? ""
                 try? await ws.send("""
-                {"t":"o","id":"\(sessionName)","c":"\(output.escaped)"}
+                {"t":"o","id":"\(sessionName)","c":"\(output.escaped)","path":"\(path.escaped)"}
                 """)
+            }
+
+            // Send initial Claude Code statuses
+            let statuses = await self.claudeStatusStore.getAll()
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            for status in statuses {
+                if let data = try? encoder.encode(status),
+                   let jsonString = String(data: data, encoding: .utf8)
+                {
+                    try? await ws.send("{\"t\":\"status\",\"d\":\(jsonString)}")
+                }
             }
 
             ws.onText { _, text async in
@@ -329,13 +625,15 @@ class ServerManager: ObservableObject {
                 let currentSessions = await TmuxHelper.listSessions()
                 for sessionName in currentSessions {
                     let output = await TmuxHelper.capture(session: sessionName)
+                    let path = await TmuxHelper.getCurrentPath(session: sessionName) ?? ""
                     try? await ws.send("""
-                    {"t":"o","id":"\(sessionName)","c":"\(output.escaped)"}
+                    {"t":"o","id":"\(sessionName)","c":"\(output.escaped)","path":"\(path.escaped)"}
                     """)
                 }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
 
+            self.removeWebSocket(ws)
             await MainActor.run {
                 self.connectedClients -= 1
             }
@@ -517,6 +815,41 @@ class ServerManager: ObservableObject {
         }
 
         return result
+    }
+
+    // WebSocket connection management for status broadcasts
+    private func addWebSocket(_ ws: WebSocket) {
+        wsLock.lock()
+        wsConnections.append(ws)
+        wsLock.unlock()
+    }
+
+    private func removeWebSocket(_ ws: WebSocket) {
+        wsLock.lock()
+        wsConnections.removeAll { $0 === ws }
+        wsLock.unlock()
+    }
+
+    func broadcastStatus(_ status: ClaudeStatus) async {
+        await claudeStatusStore.update(status)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(status),
+              let jsonString = String(data: data, encoding: .utf8)
+        else { return }
+
+        let message = "{\"t\":\"status\",\"d\":\(jsonString)}"
+
+        wsLock.lock()
+        let connections = wsConnections
+        wsLock.unlock()
+
+        for ws in connections {
+            if !ws.isClosed {
+                try? await ws.send(message)
+            }
+        }
     }
 
     private func getLocalIP() -> String {
