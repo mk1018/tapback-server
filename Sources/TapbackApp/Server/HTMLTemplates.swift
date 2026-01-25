@@ -58,6 +58,7 @@ enum HTMLTemplates {
         #h .t.status-waiting{color:#d29922}
         #h .t.status-ended{color:#8b949e}
         #h .s{font-size:13px;flex-shrink:0}
+        #sound-toggle{font-size:18px;cursor:pointer;margin-left:8px}
         .on{color:#3fb950}.off{color:#f85149}
         \(appURL != nil ? ".app-link{display:block;padding:8px 14px;background:#1f3a5f;color:#58a6ff;text-align:center;text-decoration:none;font-size:13px;border-bottom:1px solid #30363d}" : "")
         #term-contents{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-all;font-family:monospace}
@@ -89,7 +90,7 @@ enum HTMLTemplates {
             <div id="sessions"></div>
         </div>
         <div id="main">
-            <div id="h"><span class="t" id="title">Tapback</span><span class="s" id="st">...</span></div>
+            <div id="h"><span class="t" id="title">Tapback</span><span id="sound-toggle">🔇</span><span class="s" id="st">...</span></div>
             \(appURL != nil ? "<a class=\"app-link\" href=\"\(appURL!)\">Open App</a>" : "")
             <div id="term-contents"></div>
             <div id="in">
@@ -116,7 +117,37 @@ enum HTMLTemplates {
         const legend=document.getElementById('legend');
         const legendOverlay=document.getElementById('legend-overlay');
         const legendBtn=document.getElementById('legend-btn');
+        const soundToggle=document.getElementById('sound-toggle');
         let ws,activeId='',sessions=[],outputs={},sessionPaths={},claudeStatuses={};
+        let soundEnabled=localStorage.getItem('tapback_sound')==='1';
+        let prevStatuses={};
+
+        // Sound functions
+        function updateSoundIcon(){soundToggle.textContent=soundEnabled?'🔔':'🔇';}
+        updateSoundIcon();
+        soundToggle.onclick=()=>{soundEnabled=!soundEnabled;localStorage.setItem('tapback_sound',soundEnabled?'1':'0');updateSoundIcon();};
+
+        function playTone(freq,duration,type='sine'){
+            if(!soundEnabled)return;
+            try{
+                const ctx=new(window.AudioContext||window.webkitAudioContext)();
+                const osc=ctx.createOscillator();
+                const gain=ctx.createGain();
+                osc.connect(gain);gain.connect(ctx.destination);
+                osc.frequency.value=freq;
+                osc.type=type;
+                gain.gain.setValueAtTime(1.0,ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01,ctx.currentTime+duration);
+                osc.start();osc.stop(ctx.currentTime+duration);
+            }catch(e){}
+        }
+        // idle: 優しい音1回（ポン）
+        function playIdleSound(){playTone(600,0.3,'sine');}
+        // waiting: 少し高い音2回（ポンポン）
+        function playWaitingSound(){
+            playTone(700,0.2,'sine');
+            setTimeout(()=>playTone(800,0.2,'sine'),250);
+        }
 
         legendBtn.onclick=()=>{legend.classList.add('show');legendOverlay.classList.add('show');};
         legendOverlay.onclick=()=>{legend.classList.remove('show');legendOverlay.classList.remove('show');};
@@ -245,6 +276,12 @@ enum HTMLTemplates {
                     updateSidebar();
                 }else if(d.t==='status'){
                     const s=d.d;
+                    const prev=prevStatuses[s.project_dir];
+                    if(prev!==s.status){
+                        if(s.status==='idle')playIdleSound();
+                        else if(s.status==='waiting')playWaitingSound();
+                    }
+                    prevStatuses[s.project_dir]=s.status;
                     claudeStatuses[s.project_dir]=s;
                     updateSidebar();
                 }

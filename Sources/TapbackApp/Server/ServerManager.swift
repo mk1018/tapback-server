@@ -176,7 +176,7 @@ class ServerManager: ObservableObject {
             "UserPromptSubmit": [["hooks": [["type": "command", "command": hookCommand]]]],
             "Stop": [["hooks": [["type": "command", "command": hookCommand]]]],
             "Notification": [["matcher": "idle_prompt", "hooks": [["type": "command", "command": hookCommand]]]],
-            "SessionEnd": [["hooks": [["type": "command", "command": hookCommand]]]]
+            "SessionEnd": [["hooks": [["type": "command", "command": hookCommand]]]],
         ]
 
         var settings: [String: Any] = [:]
