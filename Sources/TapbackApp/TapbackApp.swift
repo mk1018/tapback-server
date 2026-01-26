@@ -6,6 +6,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var sigtermSource: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_: Notification) {
+        // Set app icon
+        if let iconURL = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: iconURL)
+        {
+            NSApp.applicationIconImage = icon
+        }
+
         // Handle Ctrl+C using DispatchSource
         signal(SIGINT, SIG_IGN)
         sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
